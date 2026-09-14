@@ -1293,7 +1293,8 @@ def report_full(name, best, cfg):
     print('  %s   at residue %d' % (name, best.pos))
     print('=' * 70)
     print()
-    for label, pr in (('%s_forward' % name, best.fwd), ('%s_reverse' % name, best.rev)):
+    for label, pr in (('%s_forward' % name, best.fwd),
+                      (reverse_name(name[0], best.pos), best.rev)):
         print('  %s' % label)
         print("    5'-%s-3'" % pr.seq)
         print('    %s' % pr.note)
@@ -1309,6 +1310,16 @@ def report_full(name, best, cfg):
           % (Ink.good(TICK), 'Limiting Tm', '%.1f C' % min(best.fwd.tm, best.rev.tm),
              'the lower of the pair -- set the annealing temperature below this'))
     print()
+
+
+def reverse_name(wt, pos):
+    """What to call the reverse primer for a position.
+
+    Not the mutation -- the position. Every substitution at a residue shares
+    one reverse oligo, so 'L171N_reverse' would suggest nineteen tubes where
+    one is needed. 'L171_reverse' is the tube.
+    """
+    return '%s%d_reverse' % (wt, pos)
 
 
 def design_one(template, cds_start, n_residues, text, cfg):
@@ -1377,9 +1388,15 @@ def design_one(template, cds_start, n_residues, text, cfg):
                         % (cfg.len_min, cfg.len_hard_max, r_lo, r_hi, gc)))
                     print()
 
-    for label, pr in (('forward', best.fwd), ('reverse', best.rev)):
-        print('%s_%s\t%s\t%d\t%.1f\t%.0f\t%s'
-              % (name, label, pr.seq, len(pr.seq), pr.tm, pr.gc,
+    # The forward primer is specific to this substitution, so it carries the
+    # full mutation name. The reverse is NOT -- it is chosen per position and
+    # is identical for every substitution at this residue -- so naming it
+    # L171N_reverse would imply nineteen different oligos where there is one.
+    # It is named for the position alone.
+    for label, pr in ((name + '_forward', best.fwd),
+                      (reverse_name(wt, pos), best.rev)):
+        print('%s\t%s\t%d\t%.1f\t%.0f\t%s'
+              % (label, pr.seq, len(pr.seq), pr.tm, pr.gc,
                  'FLAG' if pr.flags else 'OK'))
 
     if cfg.alternatives and not cfg.quiet:

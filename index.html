@@ -178,7 +178,8 @@ def design(text):
         flags = ['%s %s' % (c.name, c.value)
                  for p in (b.fwd, b.rev) for c in p.flags] + \\
                 ['pair %s' % c.name for c in b.pair_checks if not c.ok]
-        out.append(dict(name=name, status='ok', flags=flags,
+        out.append(dict(name=name, revname='%s%d_reverse' % (wt, pos),
+                        status='ok', flags=flags,
                         limiting=round(min(b.fwd.tm, b.rev.tm), 1),
                         dtm=round(b.dtm, 1),
                         primers=[dict(role=r, seq=p.seq, nt=len(p.seq),
@@ -268,9 +269,12 @@ $('go').addEventListener('click', () => {
         ? `<span class="flag">${r.flags.length} flag${r.flags.length > 1 ? 's' : ''}</span>`
         : '<span class="ok">order it</span>';
       r.primers.forEach((p, i) => {
-        lastRows.push([`${r.name}_${p.role === 'fwd' ? 'forward' : 'reverse'}`,
-                       p.seq, p.nt, p.tm, p.gc]);
-        out.push(`<tr><td>${r.name}_${p.role}</td><td class="seq">${p.seq}</td>` +
+        // The forward is specific to this substitution; the reverse is shared
+        // by every substitution at the residue, so it is named for the
+        // position alone -- one oligo, one name.
+        const label = p.role === 'fwd' ? `${r.name}_forward` : r.revname;
+        lastRows.push([label, p.seq, p.nt, p.tm, p.gc]);
+        out.push(`<tr><td>${label}</td><td class="seq">${p.seq}</td>` +
                  `<td>${p.nt}</td><td>${p.tm}</td><td>${p.gc}%</td>` +
                  `<td>${i === 0 ? verdict : ''}</td></tr>`);
       });
