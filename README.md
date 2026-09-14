@@ -7,8 +7,7 @@ KOD One, then KLD.
 
 Melting temperatures are on the KOD One scale: SantaLucia (1998) nearest-neighbour
 with the Owczarzy (2008) divalent correction, at 500 nM oligo / 50 mM Na⁺ /
-1.5 mM Mg²⁺. The same primer read *without* Mg²⁺ is about 5.7 °C lower, and
-NEBaseChanger runs hotter still. Set your annealing temperature from these
+1.5 mM Mg²⁺. The same primer read *without* Mg²⁺ is about 5.7 °C lower. Set your annealing temperature from these
 numbers, not from another calculator's.
 
 > **Not yet validated at the bench.** No primer designed by this tool has been
