@@ -3,7 +3,7 @@
 Back-to-back primers for site-directed mutagenesis by whole-plasmid PCR —
 KOD One, then KLD.
 
-**Live tool:** https://USERNAME.github.io/REPO/
+**Live tool:** https://nycatanz.github.io/PCR-Mutagenesis-Primer-Designer-Tool/
 
 Melting temperatures are on the KOD One scale: SantaLucia (1998) nearest-neighbour
 with the Owczarzy (2008) divalent correction, at 500 nM oligo / 50 mM Na⁺ /
