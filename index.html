@@ -1,0 +1,315 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PCR Mutagenesis Primer Design</title>
+<style>
+  :root { color-scheme: light dark;
+          --fg: #111; --dim: #555; --head: #f1f5f9; --rule: #e2e8f0;
+          --badbg: #fef2f2; --field: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8e8e8; --dim: #9aa0a6; --head: #23272e; --rule: #33383f;
+            --badbg: #2a1b1c; --field: #1c1f24; }
+  }
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto;
+         padding: 0 1rem; line-height: 1.5; color: var(--fg); }
+  h1 { font-size: 1.4rem; margin-bottom: .2rem; }
+  .sub { color: var(--dim); margin-top: 0; font-size: .9rem; }
+  fieldset { border: 1px solid var(--rule); border-radius: 6px; margin: 1rem 0;
+             padding: 1rem; }
+  legend { font-weight: 600; font-size: .85rem; text-transform: uppercase;
+           letter-spacing: .04em; color: var(--dim); }
+  label { display: block; font-size: .85rem; color: var(--dim); margin: .6rem 0 .2rem; }
+  input, select { font: inherit; padding: .4rem .5rem; width: 100%;
+                  box-sizing: border-box; background: var(--field);
+                  color: var(--fg); border: 1px solid var(--rule);
+                  border-radius: 4px; }
+  input[type=file] { padding: .3rem; }
+  button { font: inherit; padding: .5rem 1.1rem; margin-top: .8rem; cursor: pointer;
+           border-radius: 4px; border: 1px solid var(--rule);
+           background: var(--head); color: var(--fg); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .row > div { flex: 1 1 200px; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; margin-top: 1rem; }
+  th { text-align: left; background: var(--head); color: var(--fg); padding: .5rem; }
+  td { padding: .5rem; border-top: 1px solid var(--rule); }
+  td.seq { font-family: ui-monospace, monospace; }
+  .note { color: var(--dim); font-size: .78rem; padding-top: 0; }
+  .bad { border-left: 4px solid #ef4444; background: var(--badbg); color: var(--fg);
+         padding: .7rem 1rem; border-radius: 4px; margin: .6rem 0; }
+  .bad b { color: #ef4444; }
+  .bad .ctx { font-family: ui-monospace, monospace; margin-top: .4rem; }
+  .ok { color: #16a34a; font-weight: 600; }
+  .flag { color: #d97706; font-weight: 600; }
+  #status { font-size: .85rem; color: var(--dim); }
+  .hide { display: none; }
+  .bar { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
+</style>
+
+<h1>PCR Mutagenesis Primer Design</h1>
+<p class="sub">Back-to-back primers for site-directed mutagenesis by whole-plasmid PCR
+&mdash; KOD One, then KLD.</p>
+
+<p id="status">Loading&hellip;</p>
+
+<div id="app" hidden>
+  <fieldset>
+    <legend>1 &nbsp;Template</legend>
+    <label for="tpl">Construct</label>
+    <select id="tpl">
+      <option value="bglb.gb">BglB in pET29b(+)</option>
+      <option value="ldh.gb">LDH in pET29b(+)</option>
+      <option value="upload">Upload your own&hellip;</option>
+    </select>
+
+    <div id="own" class="hide">
+      <label for="file">Sequence file &mdash; GenBank, FASTA, or plain DNA</label>
+      <input type="file" id="file" accept=".gb,.gbk,.ape,.fasta,.fa,.seq,.txt,.dna">
+      <div class="row">
+        <div>
+          <label for="start">Residue 1 starts at base</label>
+          <input type="number" id="start" min="1" placeholder="e.g. 5243">
+        </div>
+        <div>
+          <label for="topo">Topology</label>
+          <select id="topo">
+            <option value="">As the file says</option>
+            <option value="circular">Circular (plasmid)</option>
+            <option value="linear">Linear</option>
+          </select>
+        </div>
+      </div>
+      <p class="note">Leave the base blank to use the file's own annotation &mdash;
+      that works when the file contains exactly one gene. FASTA and plain DNA carry
+      no topology, so set it here if your sequence is a plasmid.</p>
+    </div>
+
+    <p class="note" id="tplinfo"></p>
+  </fieldset>
+
+  <fieldset>
+    <legend>2 &nbsp;Mutations</legend>
+    <label for="muts">One or more, e.g. <code>L171N C167A E164Q</code></label>
+    <input id="muts" value="L171N C176A E353A">
+    <div class="bar">
+      <button id="go">Design primers</button>
+      <button id="dl" disabled>Download CSV</button>
+    </div>
+  </fieldset>
+
+  <div id="out"></div>
+</div>
+
+<script type="module">
+import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.mjs";
+
+const $ = id => document.getElementById(id);
+$('status').textContent = 'Loading (about 10 MB, once)…';
+
+const py = await loadPyodide({
+  indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/" });
+
+for (const f of ['design_primers.py', 'bglb.gb', 'ldh.gb']) {
+  const r = await fetch(f);
+  py.FS.writeFile(f, new Uint8Array(await r.arrayBuffer()));
+}
+
+py.runPython(`
+import sys, json
+sys.path.insert(0, '.')
+import design_primers as d
+
+_state = {}
+
+def load(path, cds_start, topology):
+    argv = [path, 'A1A']
+    if cds_start:
+        argv += ['--cds-start', str(int(cds_start))]
+    if topology == 'circular':
+        argv += ['--circular']
+    elif topology == 'linear':
+        argv += ['--linear']
+    try:
+        cfg = d.build_parser().parse_args(argv)
+        tpl, cs, n, notes = d.resolve_template(cfg)
+    except (OSError, ValueError) as e:
+        return json.dumps(dict(error=str(e)))
+    _state.update(cfg=cfg, tpl=tpl, cs=cs, n=n)
+    prot = d.translate(tpl.at(cs, n * 3))
+    return json.dumps(dict(bp=len(tpl), circular=tpl.circular, n=n,
+                           start=cs + 1, first=prot[:24],
+                           warn=[t for k, t in notes if k != 'ok']))
+
+def design(text):
+    if 'tpl' not in _state:
+        return json.dumps([])
+    cfg, tpl, cs, n = _state['cfg'], _state['tpl'], _state['cs'], _state['n']
+    out = []
+    for t in [m for m in text.replace(',', ' ').split() if m]:
+        try:
+            wt, pos, new = d.parse_mutation(t)
+        except ValueError as e:
+            out.append(dict(name=t, status='refused', why=str(e))); continue
+        name = '%s%d%s' % (wt, pos, new)
+        codon_start = cs + (pos - 1) * 3
+        if pos > n:
+            out.append(dict(name=name, status='refused',
+                            why='Residue %d is past the end of the coding '
+                                'sequence, which is %d residues long.' % (pos, n)))
+            continue
+        found = d.CODON_TABLE.get(tpl.at(codon_start, 3), 'X')
+        if found != wt:
+            lo = max(1, pos - 5)
+            ctx = d.translate(tpl.at(cs + (lo - 1) * 3, 11 * 3))
+            out.append(dict(name=name, status='refused',
+                            why='You asked for %s at residue %d, but this '
+                                'template has %s there.' % (wt, pos, found),
+                            context='residues %d-%d  %s'
+                                    % (lo, lo + len(ctx) - 1, ctx)))
+            continue
+        pairs = d.design(tpl, codon_start, d.PREFERRED_CODON[new][0], cfg)
+        if not pairs:
+            out.append(dict(name=name, status='refused',
+                            why=' '.join(d.why_blocked(
+                                tpl, codon_start,
+                                d.PREFERRED_CODON[new][0], cfg))))
+            continue
+        b = pairs[0]
+        flags = ['%s %s' % (c.name, c.value)
+                 for p in (b.fwd, b.rev) for c in p.flags] + \\
+                ['pair %s' % c.name for c in b.pair_checks if not c.ok]
+        out.append(dict(name=name, status='ok', flags=flags,
+                        limiting=round(min(b.fwd.tm, b.rev.tm), 1),
+                        dtm=round(b.dtm, 1),
+                        primers=[dict(role=r, seq=p.seq, nt=len(p.seq),
+                                      tm=round(p.tm, 1), gc=p.gc)
+                                 for r, p in (('fwd', b.fwd), ('rev', b.rev))]))
+    return json.dumps(out)
+`);
+
+const pyLoad = py.globals.get('load');
+const pyDesign = py.globals.get('design');
+let uploaded = null;      // filename written into Pyodide's filesystem
+let lastRows = [];
+
+function currentTemplate() {
+  const v = $('tpl').value;
+  if (v !== 'upload') return { path: v, start: v === 'bglb.gb' ? 5243 : 0, topo: '' };
+  return { path: uploaded, start: parseInt($('start').value, 10) || 0,
+           topo: $('topo').value };
+}
+
+function refreshTemplate() {
+  const t = currentTemplate();
+  const info = $('tplinfo');
+  if (!t.path) { info.textContent = 'Choose a file to continue.'; return false; }
+  const r = JSON.parse(pyLoad(t.path, t.start, t.topo));
+  if (r.error) {
+    // The script's messages name command-line flags, which mean nothing here.
+    // Point at the field on this page instead.
+    let msg = r.error, hint = '';
+    if (/no coding sequence annotated/.test(msg)) {
+      msg = 'This file has no gene annotated &mdash; FASTA and plain DNA ' +
+            'never do, only GenBank does.';
+      hint = 'Fill in <b>Residue 1 starts at base</b> above: the position of ' +
+             'the first base of the first codon you want to call residue 1.';
+    } else if (/ambiguous/.test(msg)) {
+      const m = msg.match(/Candidates: ([^.]+)\./);
+      msg = 'This file contains more than one gene, so the numbering is ' +
+            'ambiguous and nothing will be guessed.' +
+            (m ? ` Found: <i>${m[1]}</i>.` : '');
+      hint = 'Fill in <b>Residue 1 starts at base</b> above with the start of ' +
+             'the gene you mean.';
+    }
+    info.innerHTML = `<span style="color:#ef4444">${msg}</span>` +
+                     (hint ? `<br><span style="color:var(--dim)">${hint}</span>` : '');
+    return false;
+  }
+  info.textContent =
+    `${r.bp} bp, ${r.circular ? 'circular' : 'linear'} · residue 1 at ` +
+    `${r.start} · ${r.n} residues · starts ${r.first}…` +
+    (r.warn.length ? '  ⚠ ' + r.warn.join('  ') : '');
+  return true;
+}
+
+$('tpl').addEventListener('change', () => {
+  $('own').classList.toggle('hide', $('tpl').value !== 'upload');
+  $('out').innerHTML = ''; $('dl').disabled = true;
+  refreshTemplate();
+});
+$('start').addEventListener('change', refreshTemplate);
+$('topo').addEventListener('change', refreshTemplate);
+
+$('file').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  uploaded = 'user_' + f.name.replace(/[^\w.+-]/g, '_');
+  py.FS.writeFile(uploaded, new Uint8Array(await f.arrayBuffer()));
+  refreshTemplate();
+});
+
+$('go').addEventListener('click', () => {
+  if (!refreshTemplate()) return;
+  const results = JSON.parse(pyDesign($('muts').value));
+  const out = [];
+  lastRows = [];
+
+  for (const r of results.filter(x => x.status !== 'ok')) {
+    out.push(`<div class="bad"><b>${r.name}</b> &mdash; ${r.why}` +
+             (r.context ? `<div class="ctx">${r.context}</div>` : '') + `</div>`);
+  }
+
+  const ok = results.filter(x => x.status === 'ok');
+  if (ok.length) {
+    out.push('<table><tr><th>Name</th><th>Sequence</th><th>nt</th><th>Tm</th>' +
+             '<th>GC</th><th></th></tr>');
+    for (const r of ok) {
+      const verdict = r.flags.length
+        ? `<span class="flag">${r.flags.length} flag${r.flags.length > 1 ? 's' : ''}</span>`
+        : '<span class="ok">order it</span>';
+      r.primers.forEach((p, i) => {
+        lastRows.push([`${r.name}_${p.role === 'fwd' ? 'forward' : 'reverse'}`,
+                       p.seq, p.nt, p.tm, p.gc]);
+        out.push(`<tr><td>${r.name}_${p.role}</td><td class="seq">${p.seq}</td>` +
+                 `<td>${p.nt}</td><td>${p.tm}</td><td>${p.gc}%</td>` +
+                 `<td>${i === 0 ? verdict : ''}</td></tr>`);
+      });
+      out.push(`<tr><td colspan="6" class="note">limiting Tm ` +
+               `<b>${r.limiting} °C</b> &mdash; anneal below this · ` +
+               `ΔTm ${r.dtm}` +
+               (r.flags.length
+                 ? ` · <span class="flag">${r.flags.join('; ')}</span>` : '') +
+               `</td></tr>`);
+    }
+    out.push('</table>');
+  }
+
+  const clean = ok.filter(r => !r.flags.length).length;
+  out.push(`<p class="note">${ok.length} designed (${clean} with no flags), ` +
+           `${results.length - ok.length} refused. A flagged pair is still ` +
+           `reported &mdash; read the flags and decide.</p>`);
+  $('out').innerHTML = out.join('');
+  $('dl').disabled = lastRows.length === 0;
+});
+
+$('dl').addEventListener('click', () => {
+  // Every substitution at one residue shares a reverse primer, so the same
+  // oligo can appear twice. Order it once.
+  const seen = new Set(), rows = [];
+  for (const r of lastRows) {
+    if (seen.has(r[1])) continue;
+    seen.add(r[1]); rows.push(r);
+  }
+  const csv = ['name,sequence,length,tm_C,gc_percent',
+               ...rows.map(r => r.join(','))].join('\n') + '\n';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'primers.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+refreshTemplate();
+$('status').hidden = true;
+$('app').hidden = false;
+</script>
