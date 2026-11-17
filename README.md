@@ -10,8 +10,7 @@ with the Owczarzy (2008) divalent correction, at 500 nM oligo / 50 mM Na⁺ /
 1.5 mM Mg²⁺. The same primer read *without* Mg²⁺ is about 5.7 °C lower. Set your annealing temperature from these
 numbers, not from another calculator's.
 
-> **Not yet validated at the bench.** No primer designed by this tool has been
-> ordered and sequenced. Treat the output as a careful first draft.
+Bench results (October 2026). Primers for 92 LDH point mutants (pET29b template, KOD One, DpnI, KLD, DH5α) were ordered and the clones sequenced. 54 of 92 reactions gave colonies, and 45 of 47 readable clones carried the intended codon (96%). Only 14 of 52 sequenced clones were fully clean, though: most other clones had 1–4 bp lost at the blunt ligation junction or incomplete synthesis. Primer design looks sound for hitting the target codon; the junction errors are not yet resolved.
 
 ## How it works
 
